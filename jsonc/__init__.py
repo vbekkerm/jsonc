@@ -460,6 +460,7 @@ def dumps(data, indent=4, comments=True):
                     parts = match.group(1).split(',')
                     lines[i] = ','.join(parts[:-1]) + parts[-1] + match.group(2)
 
+    lines[-2] = re.sub(r',(?=\s*//)', '', lines[-2]
     text = '\n'.join(lines)
 
     return text
