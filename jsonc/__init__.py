@@ -2,7 +2,7 @@ import json
 import re
 import uuid
 import copy
-import collections
+from collections.abc import MutableSequence
 
 __version__ = '1.1.0'
 
@@ -180,7 +180,7 @@ def indexing_decorator(func):
 
     return decorated
 
-class JSONCList(collections.abc.MutableSequence):
+class JSONCList(MutableSequence):
     def __init__(self, data=None, parent=None, key=None):
         if data is None:
             data = []
@@ -325,7 +325,7 @@ def loads(text):
     text = handle_block_newlines(text)
 
     lines = text.split('\n')
-    lines = [l for l in lines if not len(l.strip()) == 0]
+    # lines = [l for l in lines if not len(l.strip()) == 0]
 
     single_line_patterns = {
         'c': '(?:^|[ \t])+\/\/((?:[^"]*"[^"]")*[^"]*(?:$))',
@@ -349,6 +349,7 @@ def loads(text):
     list_end_pattern = r'\](?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)'
     map_start_pattern = r'\{(?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)'
     map_end_pattern = r'\}(?=([^"\\]*(\\.|"([^"\\]*\\.)*[^"\\]*"))*[^"]*$)'
+    blank_line_pattern = r'(^\s*$)'
 
     list_count = 0
     map_count = 1
@@ -364,6 +365,9 @@ def loads(text):
             map_count += 1
         if re.search(map_end_pattern, l):
             map_count -= 1
+
+        if re.search(blank_line_pattern, l):
+            l = re.sub(blank_line_pattern, '".jsonc_blank_line_{}": "<JSONC_BLANK_LINE>"'.format(str(uuid.uuid4())), l, count=1)
 
         for k in inline_patterns:
             if re.search(inline_patterns[k], l):
@@ -445,9 +449,13 @@ def dumps(data, indent=4, comments=True):
     # replace block c-style comments that are in a list
     text = re.sub(r'"\.jsonc_block_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', '/*\\1*/', text)
 
+    # replace blank lines
+    text = re.sub(r'"\.jsonc_blank_line_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', '\\1', text)
+
     # replace newline placeholders
     text = text.replace('<JSONC_LINUX_NEWLINE>', '\n')
     text = text.replace('<JSONC_WINDOWS_NEWLINE>', '\r\n')
+    text = text.replace('<JSONC_BLANK_LINE>', '')
 
     lines = text.split('\n')
     for i in range(1, len(lines) - 2):
