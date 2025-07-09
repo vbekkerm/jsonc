@@ -468,7 +468,20 @@ def dumps(data, indent=4, comments=True):
                     parts = match.group(1).split(',')
                     lines[i] = ','.join(parts[:-1]) + parts[-1] + match.group(2)
 
-    lines[-2] = re.sub(r',(?=\s*//)', '', lines[-2])
+    # remove the comma from the last element while keeping track of block comments and keeping inline comments intact
+    in_block_comment = False
+    for i in reversed(range(len(lines))):
+        if in_block_comment:
+            if lines[i].strip().startswith('/*'):
+                in_block_comment = False
+                continue
+        if not in_block_comment:
+            if lines[i].strip().endswith('*/'):
+                in_block_comment = True
+                continue
+            if lines[i].strip() not in ['}', ']', '']:
+                lines[i] = re.sub(r',(?=\s*(//|#))|(,)\s*$', '', lines[i])
+                break
     text = '\n'.join(lines)
 
     return text
