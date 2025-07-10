@@ -127,7 +127,7 @@ class JSONCDict(dict):
         else:
             self.jsonc_with_comments.__setitem__(key, value)
 
-        if self.jsonc_parent != None:
+        if self.jsonc_parent is not None:
             self.jsonc_parent.__setitem__(self.jsonc_key, self)
 
     def __delitem__(self, key):
@@ -135,6 +135,39 @@ class JSONCDict(dict):
         Delete an item from the dictionary
         """
         super(JSONCDict, self).__delitem__(key)
+
+        self.__del_with_comments(key)
+
+        if self.jsonc_parent in not None:
+            self.jsonc_parent.__delitem__(self.jsonc_key, self)
+
+    def __del_with_comments(self, key):
+        self.jsonc_with_comments.__delitem__(key)
+        comment_key_to_delete = ''
+        for k in self.jsonc_with_comments.keys():
+            if f'_{key}_' in k:
+                comment_key_to_delete = k
+                break
+        if comment_key_to_delete:
+            self.jsonc_with_comments.__delitem__(comment_key_to_delete)
+
+    def pop(self, key):
+        """
+        pop an item from the dictionary
+        """
+        value = self.get(key)
+        self.__delitem__(key)
+
+        return value
+
+    def popitem(self):
+        """
+        pop the last item from the dictionary
+        """
+        key, value = super(JSONCDict, self).popitem()
+        self.__del_with_comments(key)
+
+        return key, value
 
     def __getitem__(self, key):
         """
@@ -333,8 +366,8 @@ def loads(text):
     }
 
     inline_patterns = {
-        'c': '((?:^|[ \t])[^ \t\n]+[ \t]*)\/\/((?:[^"]*"[^"]")*[^"]*(?:$))',
-        'python': '((?:^|[ \t])[^ \t\n]+[ \t]*)#((?:[^"]*"[^"]")*[^"]*(?:$))'
+        'c': '(^.*(?:^|[ \t])[^ \t\n]+[ \t]*)\/\/((?:[^"]*"[^"]")*[^"]*(?:$))',
+        'python': '(^.*(?:^|[ \t])[^ \t\n]+[ \t]*)#((?:[^"]*"[^"]")*[^"]*(?:$))'
     }
 
     block_patterns = {
@@ -369,12 +402,32 @@ def loads(text):
         if re.search(blank_line_pattern, l):
             l = re.sub(blank_line_pattern, '".jsonc_blank_line_{}": "<JSONC_BLANK_LINE>"'.format(str(uuid.uuid4())), l, count=1)
 
+        # for k in inline_patterns:
+        #     if re.search(inline_patterns[k], l):
+        #         if map_count > list_count:
+        #             l = re.sub(inline_patterns[k], '\\1\n".jsonc_inline_{}_comment_{}": "\\2"'.format(k, str(uuid.uuid4())), l, count=1)
+        #         else:
+        #             l = re.sub(inline_patterns[k], '\\1\n".jsonc_inline_{}_comment_{}: \\2"'.format(k, str(uuid.uuid4())), l, count=1)
         for k in inline_patterns:
-            if re.search(inline_patterns[k], l):
-                if map_count > list_count:
-                    l = re.sub(inline_patterns[k], '\\1\n".jsonc_inline_{}_comment_{}": "\\2"'.format(k, str(uuid.uuid4())), l, count=1)
+            inline_match = re.search(inline_patterns[k], l)
+            if inline_match:
+                json_text = inline_match.group(1)
+                comment_text = inline_match.group(2)
+                key_match = re.search(f'"([^"]+)"\s*:', json_text)
+                if key_match:
+                    key_name = key_match.group(1)
                 else:
-                    l = re.sub(inline_patterns[k], '\\1\n".jsonc_inline_{}_comment_{}: \\2"'.format(k, str(uuid.uuid4())), l, count=1)
+                    raise KeyError(f'Cannot find a valid key in {json_text} on line {i}:{l}')
+                if map_count > list_count:
+                    l = re.sub(inline_patterns[k],
+                               f'{json_text}\n'
+                               f'".jsonc_inline_{k}_{key_name}_comment_{str(uuid.uuid4())}": "{comment_text}"',
+                               l, count=1)
+                else:
+                     l = re.sub(inline_patterns[k],
+                               f'{json_text}\n'
+                               f'".jsonc_inline_{k}_{key_name}_comment_{str(uuid.uuid4())}: {comment_text}"',
+                               l, count=1)
         for k in single_line_patterns:
             if re.search(single_line_patterns[k], l):
                 if map_count > list_count:
@@ -436,13 +489,13 @@ def dumps(data, indent=4, comments=True):
     text = re.sub(r'"\.jsonc_python_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', '#\\1', text)
 
     # replace inline c-style comments that are in a map
-    text = re.sub(r'\n\s*"\.jsonc_inline_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', ' //\\1', text)
+    text = re.sub(r'\n\s*"\.jsonc_inline_c.*_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', ' //\\1', text)
     # replace inline python-style comments that are in a map
-    text = re.sub(r'\n\s*"\.jsonc_inline_python_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', ' #\\1', text)
+    text = re.sub(r'\n\s*"\.jsonc_inline_python.*_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', ' #\\1', text)
     # replace inline c-style comments that are in a list
-    text = re.sub(r'\n\s*"\.jsonc_inline_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', ' //\\1', text)
+    text = re.sub(r'\n\s*"\.jsonc_inline_c.*_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', ' //\\1', text)
     # replace inline python-style comments that are in a list
-    text = re.sub(r'\n\s*"\.jsonc_inline_python_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', ' #\\1', text)
+    text = re.sub(r'\n\s*"\.jsonc_inline_python.*_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}\: (.*)",?', ' #\\1', text)
 
     # replace block c-style comments that are in a map
     text = re.sub(r'"\.jsonc_block_c_comment_[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}"\: "(.*)",?', '/*\\1*/', text)
