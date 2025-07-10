@@ -138,7 +138,7 @@ class JSONCDict(dict):
 
         self.__del_with_comments(key)
 
-        if self.jsonc_parent in not None:
+        if self.jsonc_parent is not None:
             self.jsonc_parent.__delitem__(self.jsonc_key, self)
 
     def __del_with_comments(self, key):
